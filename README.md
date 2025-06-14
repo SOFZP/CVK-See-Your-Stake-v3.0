@@ -36,12 +36,12 @@ bash CVK-see-your-stake_v3.bash
 
 ```
 # View a specific identity on testnet, sorted by active stake  
-bash CVK-see-your-stake_v3.bash &lt;identity&gt; -ut 4:DESC
+bash CVK-see-your-stake_v3.bash <identity> -ut 4:DESC
 ```
 
 ```
 # View a specific identity on mainnet, sorted by active stake and by activating stake   
-bash CVK-see-your-stake_v3.bash &lt;identity&gt; -um 4:DESC 6:DESC
+bash CVK-see-your-stake_v3.bash <identity> -um 4:DESC 6:DESC
 ```
 
 ![CVK — See Your Stake v.3.0 Usage Example](CVK-see-your-stake-v3-example.png)  
