@@ -18,6 +18,7 @@ Optimized for performance, readability, and large datasets.
 - Works with any cluster (```-um```, ```-ut```, or auto-detect from ```solana config```)
 - Retry logic for RPC and CLI queries
 - Supports custom sorting (e.g., by stake amount)
+- **Dynamic Data Source:** Automatically fetches and caches the latest list of stake pools from the [Solana Stake Pools Research](https://github.com/SOFZP/Solana-Stake-Pools-Research) repository
 
 ---
 
@@ -48,22 +49,14 @@ bash CVK-see-your-stake_v3.bash <identity> -um 4:DESC 6:DESC
 
 ---
 
-## 📌 Status & Roadmap
-
-🧪 This script is under **active development**.  
-Upcoming features include:
-
-- 📈 Stake history over past epochs  
-- 🧮 Automatic check for Solana Foundation requirements (e.g. 5k external stake)  
-- 🌐 Planned lightweight web interface (HTML/JS) for validator visualization
-
----
-
 ## 🧾 Notes
 
 - Requires ```solana-cli``` and ```jq``` to be installed.
 - Stake pool authorities are hardcoded from known lists; contributions to expand it are welcome.
 - Tested on mainnet and testnet.
+- The script uses the `stakepools_list.csv` file from that repository:
+➡️ **[View the CSV file here](https://github.com/SOFZP/Solana-Stake-Pools-Research/blob/main/stakepools_list.csv)**
+This external data source ensures that as new pools are identified and categorized, the script will automatically benefit from the updates.  
 
 ---
 
