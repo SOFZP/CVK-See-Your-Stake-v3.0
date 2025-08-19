@@ -1,5 +1,5 @@
 #!/bin/bash
-# Cryptovik "See All Your Stake" Script version 3.0
+# Cryptovik "See All Your Stake" Script version 3.1
 # Stand with Ukraine!
 # If you want - Donate to script author
 
@@ -14,7 +14,86 @@ LIGHTPURPLE='\033[1;35m'
 UNDERLINE='\033[4m'
 NOCOLOR='\033[0m'
 
+# Function to safely parse CSV with proper handling of quoted fields
+function parse_csv_to_json() {
+    local csv_file="$1"
+    # Skip header line and parse CSV properly handling quoted fields
+    tail -n +2 "$csv_file" | jq -R -s '
+        split("\n") |
+        map(select(length > 0)) |
+        map(select(test("^#") | not)) |
+        map(
+            # Split by comma but respect quoted fields
+            . as $line |
+            # Use regex to properly split CSV respecting quotes
+            [match("(?:^|,)(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g").captures[0].string] |
+            map(
+                # Remove surrounding quotes and unescape double quotes
+                if test("^\".*\"$") then
+                    .[1:-1] | gsub("\"\""; "\"")
+                else
+                    .
+                end |
+                # Trim whitespace
+                gsub("^\\s+|\\s+$"; "")
+            ) |
+            {
+                short_name: .[0],
+                type: .[1],
+                group: .[2],
+                category: .[3],
+                public_key: .[4],
+                long_name: .[5],
+                description: .[6],
+                url: .[7],
+                image: .[8]
+            }
+        )
+    '
+}
+
 declare -A data
+
+# stakepools_list.csv from GitHub
+STAKEPOOL_URL="https://raw.githubusercontent.com/SOFZP/Solana-Stake-Pools-Research/main/stakepools_list.csv"
+STAKEPOOL_CACHE="${HOME}/.cache/stakepools_list.csv"
+STAKEPOOL_TMP="/tmp/stakepools_list_tmp.csv"
+mkdir -p "$(dirname "$STAKEPOOL_CACHE")"
+
+download_needed=true
+
+if [[ -f "$STAKEPOOL_CACHE" ]]; then
+  curl -sf "$STAKEPOOL_URL" -o "$STAKEPOOL_TMP" || {
+    echo -e "${YELLOW}⚠️  Cannot fetch latest stakepools_list.csv. Using local cache.${NOCOLOR}"
+    download_needed=false
+  }
+
+  if [[ "$download_needed" == true ]]; then
+    old_hash=$(sha256sum "$STAKEPOOL_CACHE" | awk '{print $1}')
+    new_hash=$(sha256sum "$STAKEPOOL_TMP" | awk '{print $1}')
+    
+    if [[ "$old_hash" == "$new_hash" ]]; then
+      # echo -e "${DARKGRAY}ℹ️  stakepools_list.csv is already up-to-date.${NOCOLOR}"
+      rm -f "$STAKEPOOL_TMP"
+      download_needed=false
+    else
+      mv "$STAKEPOOL_TMP" "$STAKEPOOL_CACHE"
+      # echo -e "${GREEN}✅ stakepools_list.csv updated from GitHub${NOCOLOR}"
+    fi
+  fi
+else
+  curl -sf "$STAKEPOOL_URL" -o "$STAKEPOOL_CACHE" || {
+    echo -e "${RED}❌ Failed to fetch stakepools_list.csv and no local copy exists.${NOCOLOR}"
+    exit 1
+  }
+  echo -e "${GREEN}✅ stakepools_list.csv downloaded from GitHub${NOCOLOR}"
+fi
+
+
+
+STAKEPOOL_CONF="$STAKEPOOL_CACHE"
+
+
 
 retry_command() {
     local command_str="$1"
@@ -53,12 +132,6 @@ function check_key_pair () {
         [[ "$KEY_S_TO_CHECK" == "$key" || "$KEY_W_TO_CHECK" == "$key" ]] && return 1
     done
     	
-	local STAKE_AUTH_NAMES=(MAR_NATIVE_1 MAR_NATIVE_2 )
-	local STAKE_AUTHORITY=("stWirqFCf2Uts1JBL1Jsd3r6VBWhgnpdPxCTe1MFjrq" "ex9CfkBZZd6Nv9XdnoDmmB45ymbu4arXVk7g5pWnt3N")
-	
-	local STAKE_NAMES=(SELF_STAKE FOUNDATION SFDP_TESTNET SECRET_STAKE MARINADE MARINADE2 SOCEAN_POOL JPOOL_POOL EVERSOL_STAKE BLAZESTAKE LIDO_POOL DAO_POOL JITO_POOL LAINE_POOL UNKNOWN_POOL ?ALAMEDA2 ?ALAMEDA3 ?ALAMEDA4 ?ALAMEDA5 ?ALAMEDA6 ?ALAMEDA7 ?ALAMEDA8 ?ALAMEDA9 ?ALAMEDA10 ?ALAMEDA11 ?ALAMEDA12 ?ALAMEDA13 ?ALAMEDA14 ?ALAMEDA15 MARINADE_N EDGEVANA ZIPPY_STAKE VAULT_POOL SHINOBI_POOL FOUNDATION_2 FIREDANCER0 AERO_POOL JAG_POOL DYNO_POOL DEFIN_POOL MARGINFI BOND FIREDANCER)
-	local STAKE_WTHDR=($NODE_WITHDRAW_AUTHORITY "4ZJhPQAgUseCsWhKvJLTmmRRUV74fdoTpQLNfKoekbPY" "mvines9iiHiQTysrwkJjGf2gb9Ex9jXJX8ns3qwf2kN" "EhYXq3ANp5nAerUpbSgd7VK2RRcxK1zNuSQ755G5Mtxx" "9eG63CdHjsfhHmobHgLtESGC8GabbmRcaSpHAZrtmhco" "4bZ6o3eUUNXhKuqjdCnCoPAoLgWiuLYixKaxoa8PpiKk" "AzZRvyyMHBm8EHEksWxq4ozFL7JxLMydCDMGhqM6BVck" "HbJTxftxnXgpePCshA8FubsRj9MW4kfPscfuUfn44fnt" "C4NeuptywfXuyWB9A7H7g5jHVDE8L6Nj2hS53tA71KPn" "6WecYymEARvjG5ZyqkrVQ6YkhPfujNzWpSPwNKXHCbV2" "W1ZQRwUfSkDKy2oefRBUWph82Vr2zg9txWMA8RQazN5" "BbyX1GwUNsfbcoWwnkZDo8sqGmwNDzs2765RpjyQ1pQb" "6iQKfEyhr3bZMotVkW6beNZz5CPAkiwvgV2CTje9pVSS" "AAbVVaokj2VSZCmSU5Uzmxi6mxrG1n6StW9mnaWwN6cv" "HXdYQ5gixrY2H6Y9gqsD8kPM2JQKSaRiohDQtLbZkRWE" "e6keeZrGmHMiQaFM3TAYvFz8HE3qtTFUSHsyqq5FEw7" "DYG1ooTxkLS5iHDkte2XK4QBrpHziDR6EEZg5VsqNpVo" "EcH12jxhrbhF6qHqRzWpZ8rZU3TjG3sX6F67zP61oDJG" "HKd8LdhjUyhp2z4kYgpJxc4pzKCCKR4yC14EFSLNENtw" "8g3YB8KxpWEAAvcjom5vSqxJAZczZBgB4pEgsssts86K" "2YcwVbKx9L25Jpaj2vfWSXD5UKugZumWjzEe6suBUJi2" "DU5XJS2Cm8ftMmi5eZZJg8nkgx1hnZ3nT5sPU3GzV1fo" "7VMTVroogF6GhVunnUWF9hX8JiXqPHiZoG3VKAe64Ckt" "GunPZHAJc5DH8qARPz8x6UXAsoR3NDadFYs3bxtMZsvg" "7hbKGnBZEFF3Bwd9HFetDkLDHXycjvCATFUnj1nEzV85" "7dPqBYywCgLmjuHmexrEJLTCuoFpEUEf31Mjkjhz15wv" "5LJ93G4SQh9GiewTQJNAu6X9sQ1VVyrpCAgbQsRSgn22" "21uFTR9S5LptdR2tBxVeG1KAsKXB7tESqQVT8KRU7Vnj" "F5U6ac2vLzv3pYsxPVPYhhvxZY7u2WJMQEk81E3keMhX" "CyAH9f9awBcfuZqHzwwEs4uJBLEG33S743jxnQX1KcZ6" "FZEaZMmrRC3PDPFMzqooKLS2JjoyVkKNd2MkHjr7Xvyq" "F15nfVkJFAa3H4BaHEb6hQBnmiJZwPYioDiE1yxbc5y4" "GdNXJobf8fbTR5JSE7adxa6niaygjx4EEbnnRaDCHMMW" "EpH4ZKSeViL5qAHA9QANYVHxdmuzbUH2T79f32DmSCaM" "BVPWEKqzHD4H2pAX34wbtn33eNpzx6KxHxuaJW7uKZei" "8fxe1qGoDVLtqe9PAFyV4kR6zryTDyGQYb9AZQVUCvpM" "AKJt3m2xJ6ANda9adBGqb5BMrheKJSwxyCfYkLuZNmjn" "Hodkwm8xf43JzRuKNYPGnYJ7V9cXZ7LJGNy96TWQiSGN" "BqPJdYKKpReEfXHv8kgdmRcBfLToBSHpt1qThtb52GSs" "5ugu8RogBq5ZdfGt4hKxKotRBkndiV1ndsqWCf7PBmST" "3b7XQeZ8nSMyjcQGTFJS5kBw4pXS2SqtB9ooHCnF2xV9" "7cgg6KhPd1G8oaoB48RyPDWu7uZs51jUpDYB3eq4VebH" "AjLzAtJHDVQ4c2WMnSXt94a5BNt4CorH63af2uEmgkyF")
-	
     local RETURN_INFO=""
     local FOUND_S="W"
     local KEY_RESULT="\t"
@@ -114,6 +187,11 @@ function sort_data() {
     while IFS=':' read -r key count info active deactivating activating; do
         # Порожнє info замінити на "-" або пробіл
         [[ -z "$info" || "$info" == "\\t" ]] && info=""
+        
+        # Уникнення експоненційної нотації та обрізка .000
+		[[ "$active" =~ ^0(\.0+)?$ ]] && active="0" || active=$(printf "%.3f" "$active")
+		[[ "$deactivating" =~ ^0(\.0+)?$ ]] && deactivating="0" || deactivating=$(printf "%.3f" "$deactivating")
+		[[ "$activating" =~ ^0(\.0+)?$ ]] && activating="0" || activating=$(printf "%.3f" "$activating")
 
         printf "%-47s %-7d ${LIGHTPURPLE}%-15s${NOCOLOR} ${CYAN}%-15s${NOCOLOR} ${RED}%-15s${NOCOLOR} ${GREEN}%-15s${NOCOLOR}\n" \
           "$key" "$count" "$info" "$active" "$deactivating" "$activating"
@@ -163,49 +241,104 @@ if [[ -z "$YOUR_VOTE_ACCOUNT" || "$YOUR_VOTE_ACCOUNT" == "null" ]]; then
   exit 1
 fi
 
+# Отримуємо список всіх імен валідаторів одним запитом
+VALIDATOR_NAMES_JSON=$(retry_command "solana ${SOLANA_CLUSTER} validator-info get --output json" 5 "null" false)
+declare -A VALIDATOR_NAMES
+while IFS=$'\t' read -r identity name; do
+    if [[ -z "$name" ]]; then
+        name="NO NAME"
+    fi
+    name=$(echo "$name" | sed 's/ /\\u00A0/g')
+    VALIDATOR_NAMES["$identity"]="$name"
+done < <(echo "$VALIDATOR_NAMES_JSON" | jq -r '.[] | "\(.identityPubkey)\t\(.info.name // "NO NAME")"')
+
+
+NODE_NAME="${VALIDATOR_NAMES[$THIS_SOLANA_ADRESS]:-NO\\u00A0NAME}"
+
+
 EPOCH_INFO=$(retry_command "solana ${SOLANA_CLUSTER} epoch-info 2> /dev/null" 5 "" false)
 THIS_EPOCH=`echo -e "${EPOCH_INFO}" | grep 'Epoch: ' | sed 's/Epoch: //g' | awk '{print $1}'`
 
-
 NODE_WITHDRAW_AUTHORITY=$(retry_command "solana ${SOLANA_CLUSTER} vote-account ${YOUR_VOTE_ACCOUNT} | grep 'Withdraw' | awk '{print \$NF}'" 5 "" false)
 
+# Load data
+STAKE_AUTHORITY=()
+STAKE_AUTH_NAMES=()
+STAKE_WTHDR=()
+STAKE_NAMES=()
 
-ALL_MY_STAKES=$(retry_command "solana ${SOLANA_CLUSTER} stakes ${YOUR_VOTE_ACCOUNT}" 10 "" false)
+# Parse CSV once and store in variable
+PARSED_CSV_JSON=$(parse_csv_to_json "$STAKEPOOL_CACHE")
 
-# ALL_STAKERS_KEYS_PAIRS=`echo "$ALL_MY_STAKES" | grep -E -B1 "Withdraw" | grep -oP "(?<=Stake Authority: ).*|(?<=Withdraw Authority: ).*" | paste -d '+' - - | sort | uniq`
+# Process parsed data for stake authorities and withdrawers
+while IFS=$'\t' read -r short_name type public_key; do
+  [[ -z "$public_key" ]] && continue
+
+  # 🔁 Підстановка плейсхолдерів (без змін у файлі)
+  resolved_pubkey="${public_key//YOUR_NODE_WITHDRAW_AUTHORITY/$NODE_WITHDRAW_AUTHORITY}"
+  resolved_pubkey="${resolved_pubkey//YOUR_NODE_IDENTITY/$THIS_SOLANA_ADRESS}"
+
+  if [[ "$type" == "S" ]]; then
+    STAKE_AUTHORITY+=("$resolved_pubkey")
+    STAKE_AUTH_NAMES+=("$short_name")
+  elif [[ "$type" == "W" ]]; then
+    STAKE_WTHDR+=("$resolved_pubkey")
+    STAKE_NAMES+=("$short_name")
+  fi
+done < <(echo "$PARSED_CSV_JSON" | jq -r '.[] | [.short_name, .type, .public_key] | @tsv')
+
+
+
+ALL_MY_STAKES_JSON=$(retry_command "solana ${SOLANA_CLUSTER} stakes ${YOUR_VOTE_ACCOUNT} --output json-compact" 10 "" false)
+
 mapfile -t ALL_STAKERS_KEYS_PAIRS < <(
-  echo "$ALL_MY_STAKES" | grep -E -B1 "Withdraw" |
-  grep -oP "(?<=Stake Authority: ).*|(?<=Withdraw Authority: ).*" |
-  paste -d '+' - - | sort -u
+  echo "$ALL_MY_STAKES_JSON" | jq -r '
+    .[] | "\(.staker)+\(.withdrawer)"' | sort -u
 )
 
-echo -e "${DARKGRAY}All Stakers of $YOUR_VOTE_ACCOUNT | Epoch ${THIS_EPOCH} ${CLUSTER_NAME}${NOCOLOR}"
+echo -e "${DARKGRAY}All Stakers of $NODE_NAME | $YOUR_VOTE_ACCOUNT | Epoch ${THIS_EPOCH} ${CLUSTER_NAME}${NOCOLOR}"
 
 DONE_STAKES=""
 for i in "${ALL_STAKERS_KEYS_PAIRS[@]}"; do
     RES=$(check_key_pair "$DONE_STAKES" "$i")
-	if [[ "$RES" == "" ]]; then
-        continue
-    fi
-	
-	KEY_TYPE_NAME=$(echo $RES | cut -d'^' -f1)
-	DONE_STAKES=$(echo $RES | cut -d'^' -f2)
-	
-	KEY=$(echo $KEY_TYPE_NAME | cut -d' ' -f1)
-	TYPE=$(echo $KEY_TYPE_NAME | cut -d' ' -f2)
-	NAME=$(echo $KEY_TYPE_NAME | cut -d' ' -f3)
-	
-	# Визначення значення count
-    count=$(echo "$ALL_MY_STAKES" | grep -B7 -E $KEY | grep 'Active Stake' | sed 's/Active Stake: //g' | sed 's/ SOL//g' | wc -l)
+    [[ -z "$RES" ]] && continue
 
-	# Заповнення асоціативного масиву з даними
-    data["$KEY"]=$count:$NAME:$(
-        echo "$ALL_MY_STAKES" | grep -B7 -E $KEY | grep 'Active Stake' | sed 's/Active Stake: //g' | sed 's/ SOL//g' | bc | awk '{n+=0+$1+0}; END{print 0+n+0}' | sed -r 's/^(.{7}).+$/\1/'
+    KEY_TYPE_NAME=$(echo "$RES" | cut -d'^' -f1)
+    DONE_STAKES=$(echo "$RES" | cut -d'^' -f2)
+
+    KEY=$(echo "$KEY_TYPE_NAME" | cut -d' ' -f1)
+    TYPE=$(echo "$KEY_TYPE_NAME" | cut -d' ' -f2)
+    NAME=$(echo "$KEY_TYPE_NAME" | cut -d' ' -f3)
+
+    # Фільтруємо акаунти цього ключа
+    stake_entries=$(echo "$ALL_MY_STAKES_JSON" | jq -c --arg key "$KEY" '
+      .[] | select(.staker == $key or .withdrawer == $key)
+    ')
+
+    count=0
+    active_total=0
+    deactivating_total=0
+    activating_total=0
+
+    while IFS= read -r stake; do
+        active=$(echo "$stake" | jq '.activeStake // 0')
+        activating=$(echo "$stake" | jq '.activatingStake // 0')
+        deactivating=$(echo "$stake" | jq '.deactivatingStake // 0')
+
+        [[ "$active" != "0" ]] && ((count++))
+        active_total=$((active_total + active))
+        activating_total=$((activating_total + activating))
+        deactivating_total=$((deactivating_total + deactivating))
+    done <<< "$stake_entries"
+
+    # Запис у data[], формат такий самий як раніше
+    data["$KEY"]="$count:$NAME:$(
+        awk -v n="$active_total" 'BEGIN{printf "%.3f", n/1e9}' | sed -r 's/^(.{12}).*$/\1/'
     ):$(
-        echo "$ALL_MY_STAKES" | grep -B7 -E $KEY | grep -B1 -i 'deactivates' | grep 'Active Stake' | sed 's/Active Stake: //g' | sed 's/ SOL//g' | bc | awk '{n+=0+$1+0}; END{print 0+n+0}' | sed -r 's/^(.{7}).+$/\1/'
+        awk -v n="$deactivating_total" 'BEGIN{printf "%.3f", n/1e9}' | sed -r 's/^(.{12}).*$/\1/'
     ):$(
-        echo "$ALL_MY_STAKES" | grep -B7 -E $KEY | grep 'Activating Stake' | sed 's/Activating Stake: //g' | sed 's/ SOL//g' | bc | awk '{n+=0+$1+0}; END{print 0+n+0}' | sed -r 's/^(.{7}).+$/\1/'
-    )
+        awk -v n="$activating_total" 'BEGIN{printf "%.3f", n/1e9}' | sed -r 's/^(.{12}).*$/\1/'
+    )"
 done
 
 
@@ -223,31 +356,23 @@ sort_data "${SORTING_CRITERIAS[@]}"
 
 
 
-TOTAL_ACTIVE_STAKE=$(echo "$ALL_MY_STAKES" | awk '/Active Stake:/ {gsub("Active Stake: ", "", $0); gsub(" SOL", "", $0); sum += $1} END {printf "%.2f\n", sum}')
-TOTAL_STAKE_COUNT=`echo -e "${ALL_MY_STAKES}" | grep 'Active Stake' | sed 's/Active Stake: //g' | sed 's/ SOL//g' | bc | wc -l`
+TOTAL_ACTIVE_STAKE=$(echo "$ALL_MY_STAKES_JSON" | jq '[.[].activeStake // 0] | add / 1e9' | awk '{printf "%.3f\n", $1}')
+TOTAL_STAKE_COUNT=$(echo "$ALL_MY_STAKES_JSON" | jq '[.[] | select(.activeStake // 0 > 0)] | length')
 
-ACTIVATING_STAKE=$(echo "$ALL_MY_STAKES" | awk '/Activating Stake:/ {gsub("Activating Stake: ", "", $0); gsub(" SOL", "", $0); sum += $1} END {printf "%.2f\n", sum}')
-ACTIVATING_STAKE_COUNT=`echo -e "${ALL_MY_STAKES}" | grep 'Activating Stake: ' | sed 's/Activating Stake: //g' | sed 's/ SOL//g' | bc | wc -l`
+ACTIVATING_STAKE=$(echo "$ALL_MY_STAKES_JSON" | jq '[.[].activatingStake // 0] | add / 1e9' | awk '{printf "%.3f\n", $1}')
+ACTIVATING_STAKE_COUNT=$(echo "$ALL_MY_STAKES_JSON" | jq '[.[] | select(.activatingStake // 0 > 0)] | length')
 
-DEACTIVATING_STAKE=$(echo "$ALL_MY_STAKES" | awk '
-{
-  if (tolower($0) ~ /deactivates/) {
-    if (prev ~ /Active Stake:/) {
-      gsub("Active Stake: ", "", prev)
-      gsub(" SOL", "", prev)
-      sum += prev
-    }
-  }
-  prev = $0
-}
-END {
-  printf "%.2f\n", sum
-}')
-DEACTIVATING_STAKE_COUNT=`echo -e "${ALL_MY_STAKES}" | grep -B1 -i 'deactivates' | grep 'Active Stake' | sed 's/Active Stake: //g' | sed 's/ SOL//g' | bc | wc -l`
+DEACTIVATING_STAKE=$(echo "$ALL_MY_STAKES_JSON" | jq '[.[].deactivatingStake // 0] | add / 1e9' | awk '{printf "%.3f\n", $1}')
+DEACTIVATING_STAKE_COUNT=$(echo "$ALL_MY_STAKES_JSON" | jq '[.[] | select(.deactivatingStake // 0 > 0)] | length')
 
-TOTAL_ACTIVE_STAKE_COUNT=`echo "${TOTAL_STAKE_COUNT:-0} ${ACTIVATING_STAKE_COUNT:-0}" | awk '{print $1 - $2}' | bc`
+TOTAL_ACTIVE_STAKE_COUNT=$((TOTAL_STAKE_COUNT - ACTIVATING_STAKE_COUNT))
 
 echo -e "—————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————"
+
+# Уникнення експоненційної нотації та обрізка .000
+[[ "$TOTAL_ACTIVE_STAKE" =~ ^0(\.0+)?$ ]] && TOTAL_ACTIVE_STAKE="0" || TOTAL_ACTIVE_STAKE=$(printf "%.3f" "$TOTAL_ACTIVE_STAKE")
+[[ "$ACTIVATING_STAKE" =~ ^0(\.0+)?$ ]] && ACTIVATING_STAKE="0" || ACTIVATING_STAKE=$(printf "%.3f" "$ACTIVATING_STAKE")
+[[ "$DEACTIVATING_STAKE" =~ ^0(\.0+)?$ ]] && DEACTIVATING_STAKE="0" || DEACTIVATING_STAKE=$(printf "%.3f" "$DEACTIVATING_STAKE")
 
 printf "%-47s %-7d %-15s ${CYAN}%-15s${NOCOLOR} ${RED}%-15s${NOCOLOR} ${GREEN}%-15s${NOCOLOR}\n" \
   "TOTAL:" "$TOTAL_ACTIVE_STAKE_COUNT" "" "$TOTAL_ACTIVE_STAKE" "$DEACTIVATING_STAKE" "$ACTIVATING_STAKE"
